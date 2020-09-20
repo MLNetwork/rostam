@@ -11,7 +11,7 @@ $ sudo make install
 ```
 If you have Gurobi installed, just change ``./configure`` to  ``./configure --enable-gurobi`` in the commands above.
 
-##SiPML
+## SiPML
 To simulate a tranining job on an electrical interconnect run:
 ```
 sipml-elect --num_gpus 256 --bw_per_port_Gb 1000 --input_profile examples/resnet_v1_50_float32
