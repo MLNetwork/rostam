@@ -10,6 +10,7 @@ $ make -j$(nproc)
 $ sudo make install
 ```
 If you have Gurobi installed, just change ``./configure`` to  ``./configure --enable-gurobi`` in the commands above.
+
 ##SiPML
 To simulate a tranining job on an electrical interconnect run:
 ```
