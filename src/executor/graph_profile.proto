@@ -1,0 +1,41 @@
+syntax = "proto3";
+package graph_profile;
+
+
+message Profile {
+message Op {
+  string name = 1;
+
+  uint32 comp_time_us = 2;
+
+  uint32 num_bytes = 3;
+
+  enum MemType {
+    TENSOR = 0; // has a batch dimension
+    WRITEVARIABLE = 1; // to store trainable model parameters
+    READVARIABLE = 2;
+    CONSTANT = 3;
+    }
+
+  enum OpType {
+        COMPUTE = 0;
+        MEMORY = 1;
+        CONTROLDEPENDENCY = 2;
+        }
+
+  OpType op_type = 4;
+
+  MemType mem_type = 5;
+
+  uint32 output_bytes = 6;
+
+}
+
+message Adjacents{
+    string node = 1;
+    repeated string succs = 2;
+    }
+
+  repeated Op nodes = 1;
+  repeated Adjacents graph = 2;
+}
