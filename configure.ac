@@ -54,22 +54,22 @@ AC_ARG_ENABLE([all-static],
 
 AC_SUBST(STATIC_BUILD_FLAG)
 
-AC_ARG_ENABLE([gurobi],
-  [AS_HELP_STRING([--enable-gurobi], [Enable using Gurobi solver (requires gurobi)])],
-  [case "$enableval" in
-    '' | yes)
-        usegurobi=true
-        ;;
-    no)
-        usegurobi=false
-        ;;
-    *)
-        AC_MSG_ERROR([Unknown argument '$enableval' to --enable-gurobi])
-        ;;
-   esac],
-  [usegurobi=false])
+# Checks for header files.
+AC_PATH_X
+AC_CHECK_HEADERS([limits.h unistd.h], [], AC_MSG_ERROR([Missing required header file]))
 
-AM_CONDITIONAL([USEGUROBI], [test "usegurobi" = true])
+AC_ARG_WITH(gurobi,
+[AS_HELP_STRING([--without-gurobi], [Do not use Gurobi])])
+if test "x${with_gurobi}" == "xyes"; then
+    AC_CHECK_HEADER([gurobi_c++.h], [AC_DEFINE(HAVE_GUROBI, 1, [Define to 1 if you have gurobi.])], AC_MSG_ERROR([Missing gurobi header file]))
+    AC_CHECK_LIB([gurobi90], [GRBaddgenconstrIndicator], [], AC_MSG_ERROR([Missing gurobi90 package]), [])
+    AC_CHECK_LIB([gurobi_c++], [GRBaddgenconstrIndicator], [], AC_MSG_ERROR([Missing gurobi_c++ package]), [])
+	usegurobi=true
+else
+	usegurobi=false
+fi
+AM_CONDITIONAL([USEGUROBI], [test "$usegurobi" = true])
+
 
 
 # Checks for programs.
@@ -85,15 +85,7 @@ AC_PROG_RANLIB
 # Checks for libraries.
 PKG_CHECK_MODULES([PROTOBUF], [protobuf])
 
-if test "$usegurobi" = true; then
-    PKG_CHECK_MODULES([GUROBI], [gurobi90])
-    AC_CHECK_HEADERS([gurobi_c++.h], [], AC_MSG_ERROR([Missing Gurobi header file]))
-fi
 
-
-# Checks for header files.
-AC_PATH_X
-AC_CHECK_HEADERS([limits.h unistd.h], [], AC_MSG_ERROR([Missing required header file]))
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_CHECK_HEADER_STDBOOL

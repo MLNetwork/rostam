@@ -367,6 +367,11 @@ RingInterconnect::RingInterconnect( uint16_t dev_id,
                                                                                     tm_estimator,
                                                                                     cnfg,
                                                                                     log_dir ),
+#ifdef HAVE_GUROBI
+                                                                  env( nullptr ),
+                                                                  model( nullptr ),
+                                                                  lambda( nullptr ),
+#endif //HAVE_GUROBI
                                                                   num_waves( num_waves ),
                                                                   bw_decision_type( bw_decision_type ),
                                                                   tolerable_dist( tolerable_dist ),

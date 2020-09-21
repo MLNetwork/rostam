@@ -43,6 +43,9 @@ GRBModel *model;
                                                                    tm_estimator,
                                                                    cnfg,
                                                                    log_dir ),
+#ifdef HAVE_GUROBI
+                                                 model( nullptr ),
+#endif //HAVE_GUROBI
                                                  num_ocs( num_ocs ),
                                                  port_count( port_count ),
                                                  single_shot( single_shot ),
