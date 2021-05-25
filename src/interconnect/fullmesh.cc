@@ -22,4 +22,7 @@ ExitStatus FullMeshInterconnect::allocate_episode_bw( ) {
   return ExitStatus::SUCCESS;
 }
 
-
+ExitStatus FullMeshInterconnect::is_routing_feasible( Packet*, bool &is_feasible ){
+  is_feasible = true;
+  return ExitStatus::SUCCESS;
+}
