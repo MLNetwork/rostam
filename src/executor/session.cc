@@ -103,6 +103,7 @@ ExitStatus Session::launch_ready_ops( ) {
     if ( op->status == OpStatus::WAITING ) {
       uint16_t i = 0;
       for ( auto pred : graph.reverse_adj.at( op )) {
+//        std::cout << pred->name << std::endl;
         if ( pred->status != OpStatus::FINISHED )
           break;
         i ++;
