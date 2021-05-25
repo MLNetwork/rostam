@@ -1,12 +1,12 @@
 #include "op.hh"
 
-void CompOp::copy_scale_to( CompOp *new_op, double batch_scale ) {
-  new_op->name = std::move( name );
-  new_op->type = type;
-  new_op->device = device;
-  new_op->session_id = session_id;
-  new_op->comp_time_map = comp_time_map;
-  new_op->output_bytes_map = output_bytes_map;
+void CompOp::copy_scale_to( CompOp *new_op, double batch_scale ) const {
+//  new_op->name = name;
+//  new_op->type = type;
+//  new_op->device = device;
+//  new_op->session_id = session_id;
+//  new_op->comp_time_map = comp_time_map;
+//  new_op->output_bytes_map = output_bytes_map;
   new_op->comp_time = Step( double( comp_time ) * batch_scale );
   new_op->output_bytes = uint32_t( double( output_bytes ) * batch_scale );
 }
@@ -16,7 +16,7 @@ ExitStatus CompOp::get_mem_size( uint64_t &size ) const {
   return ExitStatus::SUCCESS;
 }
 
-ExitStatus CompOp::get_batch_size( uint16_t &bs ) {
+ExitStatus CompOp::get_batch_size( uint16_t &bs ) const {
   bs = batch_size;
   return ExitStatus::SUCCESS;
 }
@@ -53,16 +53,33 @@ ExitStatus CompOp::set_batch_size( uint16_t bs ) {
       }
     }
     assert( first_peer_bs != second_peer_bs );
-    auto comp_time_1 = comp_time_map.at( first_peer_bs );
-    auto output_bytes_1 = output_bytes_map.at( first_peer_bs );
-    auto comp_time_2 = comp_time_map.at( second_peer_bs );
-    auto output_bytes_2 = output_bytes_map.at( second_peer_bs );
-    double time_slope =
-        ( double( comp_time_2 ) - double( comp_time_1 )) / ( double( second_peer_bs ) - double( first_peer_bs ));
-    double bytes_slope =
-        ( double( output_bytes_2 ) - double( output_bytes_1 )) / ( double( second_peer_bs ) - double( first_peer_bs ));
-    comp_time = comp_time_1 + time_slope * double( bs - first_peer_bs );
-    output_bytes = output_bytes_1 + bytes_slope * double( bs - first_peer_bs );
+    try{
+      if ( first_peer_bs == 0 || second_peer_bs == 0 ){
+        /* as we haven't been able to find two points for interpolation,
+         * we use a less accurate interploation */
+        auto peer_bs = ( first_peer_bs > 0 ) ? first_peer_bs : second_peer_bs;
+        double alpha = 0.9; /* or some other batch effectiveness ratio */
+        comp_time = double(comp_time_map.at( peer_bs )) * double(bs) / double(peer_bs) * alpha;
+        output_bytes = double(output_bytes_map.at( peer_bs )) * double(bs) / double(peer_bs);
+      }
+      else{
+        auto comp_time_1 = comp_time_map.at( first_peer_bs );
+        auto output_bytes_1 = output_bytes_map.at( first_peer_bs );
+        auto comp_time_2 = comp_time_map.at( second_peer_bs );
+        auto output_bytes_2 = output_bytes_map.at( second_peer_bs );
+        double time_slope =
+            ( double( comp_time_2 ) - double( comp_time_1 )) / ( double( second_peer_bs ) - double( first_peer_bs ));
+        double bytes_slope =
+            ( double( output_bytes_2 ) - double( output_bytes_1 )) / ( double( second_peer_bs ) - double( first_peer_bs ));
+        comp_time = comp_time_1 + time_slope * double( bs - first_peer_bs );
+        output_bytes = output_bytes_1 + bytes_slope * double( bs - first_peer_bs );
+      }
+    }
+    catch ( std::out_of_range ) {
+      std::cout << first_peer_bs << " " << second_peer_bs;
+      throw std::runtime_error("");
+    }
+
   }
   return ExitStatus::SUCCESS;
 }

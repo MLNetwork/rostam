@@ -25,7 +25,7 @@ enum class OpStatus {
 
 class Op {
  public:
-  std::string name;
+  const std::string name;
   OpType type;
   /* which device does this op belong to */
   Device *device = device;
@@ -57,7 +57,7 @@ class Op {
 
   Op( const Op & ) = default;
 
-  Op &operator=( const Op & ) = default;
+  Op &operator=( const Op & ) = delete;
 
  public:
   virtual ExitStatus get_mem_size( uint64_t &size ) const = 0;
@@ -90,13 +90,13 @@ class CompOp : public Op {
 
   CompOp( ) : Op( "", OpType::COMPUTE, nullptr, 0, "" ), comp_time_map( ), output_bytes_map( ), comp_time( 0 ), output_bytes( 0 ), batch_size( 0 ) { }
 
-  void copy_scale_to( CompOp *new_op, double batch_scale );
+  void copy_scale_to( CompOp *new_op, double batch_scale ) const;
 
   ExitStatus get_mem_size( uint64_t &size ) const override;
 
   ExitStatus set_batch_size( uint16_t batch_size );
 
-  ExitStatus get_batch_size( uint16_t &bs );
+  ExitStatus get_batch_size( uint16_t &bs ) const;
 
   ExitStatus add_comp_time( uint16_t bs, Step comp_time_steps );
 
@@ -125,7 +125,7 @@ class NetOp : public Op {
 
   NetOp( const NetOp & ) = default;
 
-  NetOp &operator=( const NetOp & ) = default;
+  NetOp &operator=( const NetOp & ) = delete;
 
   ExitStatus get_mem_size( uint64_t &size ) const override;
 };
