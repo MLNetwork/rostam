@@ -12,16 +12,19 @@
 #endif //HAVE_GUROBI
 
 class BaseInterconnect : public Device {
- protected:
+ public:
   GPU *gpus;
  public:
   uint16_t num_gpus;
  private:
   std::deque< Packet * > **to_send_buff;
   std::deque< Packet * > *to_recv_buff;
-  Matrix2D< double > step_bytes_budget;
+//  Matrix2D< double > step_bytes_budget;
+  const double ingress_link_speed;
+  const double egress_link_speed;
  protected:
   Matrix2D< double > episode_bw;
+  std::map< uint16_t, std::map< uint16_t, double > > sparse_episode_bw;
  public:
   TMEstimatorBase *tm_estimator;
   SimConfig cnfg;
@@ -33,6 +36,8 @@ class BaseInterconnect : public Device {
   BaseInterconnect( uint16_t dev_id,
                     GPU *gpus,
                     uint16_t num_gpus,
+                    double ingress_link_speed,
+                    double egress_link_speed,
                     TMEstimatorBase *tm_estimator,
                     const SimConfig &cnfg,
                     const std::string log_dir ) : Device( dev_id, DeviceType::INTERCONNECT ),
@@ -40,7 +45,9 @@ class BaseInterconnect : public Device {
                                                   num_gpus( num_gpus ),
                                                   to_send_buff( ),
                                                   to_recv_buff( ),
-                                                  step_bytes_budget( num_gpus, num_gpus ),
+//                                                  step_bytes_budget( num_gpus, num_gpus ),
+                                                  ingress_link_speed( ingress_link_speed ),
+                                                  egress_link_speed( egress_link_speed ),
                                                   episode_bw( num_gpus, num_gpus ),
                                                   tm_estimator( tm_estimator ),
                                                   cnfg( cnfg ),
@@ -63,6 +70,8 @@ class BaseInterconnect : public Device {
   virtual ExitStatus offline_bw_est( std::unordered_map< Device *,
                                                          std::unordered_map< Device *, double>> &estimate ) = 0;
 
+  virtual ExitStatus is_routing_feasible( Packet* pkt, bool &is_bw_avail ) = 0;
+
   BaseInterconnect( const BaseInterconnect & ) = delete;
 
   BaseInterconnect( BaseInterconnect && ) = delete;
@@ -77,15 +86,17 @@ class BaseInterconnect : public Device {
   ExitStatus normalize_tm( Matrix2D< double > &normal_tm ) const;
 
  private:
-  ExitStatus read_tx_buffers( );
+  ExitStatus proceed_ingress( );
 
-  ExitStatus write_rx_buffers( );
+  ExitStatus proceed_egress( );
 
-  ExitStatus route( );
+  ExitStatus proceed_routing( );
 
   ExitStatus allocate_step_bw( );
 
   virtual ExitStatus allocate_episode_bw( ) = 0;
+
+  virtual ExitStatus reset_routing_step_counters( );
 
   ExitStatus progress_log( );
 };
