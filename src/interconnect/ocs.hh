@@ -7,8 +7,11 @@ using namespace std;
 class OCSInterconnect : public BaseInterconnect {
  private:
 #ifdef HAVE_GUROBI
-GRBModel *model;
+  GRBModel *model;
 #endif
+  std::map< uint16_t, std::map< uint16_t, double > > sparse_episode_bw_budget;
+  uint16_t eff_num_gpus; /* effective number of GPUs for speeding up the ILP solver */
+
  public:
   const uint16_t num_ocs;
   const uint16_t port_count; /* #ports per ocs */
@@ -16,8 +19,6 @@ GRBModel *model;
   map< uint16_t, map< uint16_t, Device * > > port_map; /* ocs_no -> port_no -> device */
 
  private:
-  ExitStatus setup_optimal_solver( );
-
   ExitStatus setup_optimal_solver_singleshot( );
 
   ExitStatus setup_optimal_solver_multishot( );
@@ -32,6 +33,8 @@ GRBModel *model;
   OCSInterconnect( uint16_t dev_id,
                    GPU *gpus,
                    uint16_t num_gpus,
+                   double ingress_link_speed,
+                   double egress_link_speed,
                    TMEstimatorBase *tm_estimator,
                    const SimConfig &cnfg,
                    const uint16_t num_ocs,
@@ -40,6 +43,8 @@ GRBModel *model;
                    const std::string log_dir ) : BaseInterconnect( dev_id,
                                                                    gpus,
                                                                    num_gpus,
+                                                                   ingress_link_speed,
+                                                                   egress_link_speed,
                                                                    tm_estimator,
                                                                    cnfg,
                                                                    log_dir ),
@@ -65,12 +70,19 @@ GRBModel *model;
     GRBEnv env = GRBEnv( true );
 
     /* create an empty model */
-    env.start( );
+    try{
+      env.start( );
+    } catch(GRBException e) {
+      cout << "Error code = " << e.getErrorCode() << endl;
+      cout << e.getMessage() << endl;
+    }
     model = new GRBModel( env );
-    #endif //HAVE_GUROBI
+#endif //HAVE_GUROBI
 
-    setup_optimal_solver( );
+//    setup_optimal_solver( );
   }
+
+  ExitStatus setup_optimal_solver( );
 
   ~OCSInterconnect( ) { }
 
@@ -79,6 +91,13 @@ GRBModel *model;
   OCSInterconnect &operator=( const OCSInterconnect & ) = delete;
 
   ExitStatus offline_bw_est( unordered_map< Device *, unordered_map< Device *, double>> &estimate ) override;
+
+  ExitStatus is_routing_feasible( Packet* pkt, bool &is_feasible ) override;
+
+  ExitStatus reset_routing_step_counters( ) override;
+
+  ExitStatus set_eff_num_gpus( uint16_t n );
+
 };
 
 #endif //SIPML_SRC_OCS_HH_

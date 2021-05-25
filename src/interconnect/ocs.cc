@@ -1,11 +1,14 @@
 #include "ocs.hh"
+#include <stdexcept>
 
 ExitStatus OCSInterconnect::allocate_episode_bw( ) {
+
   if ( single_shot ){
-  allocate_episode_bw_singleshot( ).ok( );
+    allocate_episode_bw_singleshot( ).ok( );
   }
-  else
-    allocate_episode_bw_multishot().ok();
+  else{
+    allocate_episode_bw_multishot( ).ok( );
+  }
   return ExitStatus::SUCCESS;
 }
 
@@ -24,15 +27,19 @@ ExitStatus OCSInterconnect::setup_optimal_solver_singleshot( ) {
   try {
     Matrix2D< double > normal_tm( num_gpus, num_gpus );
     normalize_tm( normal_tm );
+//    cout << normal_tm;
+
+    cout << "eff_num_gpus" << eff_num_gpus << endl;
+
     model->set( GRB_IntParam_OutputFlag, 0 );
     /* create the permutation decisions */
-    GRBVar ***perms; /* a num_ocs x port_count x port_count binary variable */
+    GRBVar ***perms; /* a num_ocs x eff_num_gpus x eff_num_gpus binary variable */
     perms = new GRBVar **[num_ocs];
     for ( int i = 0; i < num_ocs; i ++ ) {
-      perms[ i ] = new GRBVar *[port_count];
-      for ( int j = 0; j < port_count; j ++ ) {
-        perms[ i ][ j ] = new GRBVar[port_count];
-        for ( int k = 0; k < port_count; k ++ ) {
+      perms[ i ] = new GRBVar *[eff_num_gpus];
+      for ( int j = 0; j < eff_num_gpus; j ++ ) {
+        perms[ i ][ j ] = new GRBVar[eff_num_gpus];
+        for ( int k = 0; k < eff_num_gpus; k ++ ) {
           perms[ i ][ j ][ k ] = model->addVar( 0.0,
                                                 1.0,
                                                 0.0,
@@ -46,9 +53,9 @@ ExitStatus OCSInterconnect::setup_optimal_solver_singleshot( ) {
 
     /* permutation row constraints */
     for ( int sw = 0; sw < num_ocs; sw ++ ) {
-      for ( int src = 0; src < port_count; src ++ ) {
+      for ( int src = 0; src < eff_num_gpus; src ++ ) {
         GRBLinExpr expr = 0;
-        for ( int dst = 0; dst < port_count; dst ++ ) {
+        for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
           expr += perms[ sw ][ src ][ dst ];
         }
         string s = "egress_constraint_sw" + to_string( sw ) + "_port" + to_string( src );
@@ -58,9 +65,9 @@ ExitStatus OCSInterconnect::setup_optimal_solver_singleshot( ) {
 
     /* permutation column constraints */
     for ( int sw = 0; sw < num_ocs; sw ++ ) {
-      for ( int dst = 0; dst < port_count; dst ++ ) {
+      for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
         GRBLinExpr expr = 0;
-        for ( int src = 0; src < port_count; src ++ ) {
+        for ( int src = 0; src < eff_num_gpus; src ++ ) {
           expr += perms[ sw ][ src ][ dst ];
         }
         string s = "ingress_constraint_sw" + to_string( sw ) + "_port" + to_string( dst );
@@ -75,15 +82,15 @@ ExitStatus OCSInterconnect::setup_optimal_solver_singleshot( ) {
 
     /* create device-to-device bandwidths */
     GRBLinExpr **bw;
-    bw = new GRBLinExpr *[num_gpus];
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      bw[ src_dev ] = new GRBLinExpr[num_gpus];
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    bw = new GRBLinExpr *[eff_num_gpus];
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      bw[ src_dev ] = new GRBLinExpr[eff_num_gpus];
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         bw[ src_dev ][ dst_dev ] = 0;
       }
     }
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
@@ -91,8 +98,8 @@ ExitStatus OCSInterconnect::setup_optimal_solver_singleshot( ) {
         }
       }
     }
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         if ( normal_tm.get_elem( src_dev, dst_dev ) > 0 ) {
           GRBLinExpr rate = bw[ src_dev ][ dst_dev ] / normal_tm.get_elem( src_dev, dst_dev );
           string s = "rate_constraint_port" + to_string( src_dev ) + "_port" + to_string( dst_dev );
@@ -119,15 +126,15 @@ ExitStatus OCSInterconnect::allocate_episode_bw_singleshot( ) {
     model->reset( ); /* reset solution states */
     /* create device-to-device bandwidths */
     GRBLinExpr **bw;
-    bw = new GRBLinExpr *[num_gpus];
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      bw[ src_dev ] = new GRBLinExpr[num_gpus];
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    bw = new GRBLinExpr *[eff_num_gpus];
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      bw[ src_dev ] = new GRBLinExpr[eff_num_gpus];
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         bw[ src_dev ][ dst_dev ] = 0;
       }
     }
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
@@ -139,8 +146,8 @@ ExitStatus OCSInterconnect::allocate_episode_bw_singleshot( ) {
     }
 
     /* first remove the old constraint */
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         string s = "rate_constraint_port" + to_string( src_dev ) + "_port" + to_string( dst_dev );
         try {
           model->remove( model->getConstrByName( s ));
@@ -157,8 +164,8 @@ ExitStatus OCSInterconnect::allocate_episode_bw_singleshot( ) {
     }
     model->update( ); /* gurobi is lazy :D */
     /* then, add the new constraint */
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         string s = "rate_constraint_port" + to_string( src_dev ) + "_port" + to_string( dst_dev );
         if ( normal_tm.get_elem( src_dev, dst_dev ) > 0 ) {
           GRBLinExpr rate = bw[ src_dev ][ dst_dev ] / normal_tm.get_elem( src_dev, dst_dev );
@@ -170,20 +177,24 @@ ExitStatus OCSInterconnect::allocate_episode_bw_singleshot( ) {
     model->update( );
     model->optimize( );
     episode_bw.fill_zeros( );
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    double delta = double( cnfg.num_waves ) * double( cnfg.bwxstep_per_wave ) / double( num_ocs );
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
-          episode_bw.add_elem_by( src_dev, dst_dev, model->getVarByName( "perm_" + to_string( ocs_no ) +
+          bool is_connected = model->getVarByName( "perm_" + to_string( ocs_no ) +
               "_" + to_string( src_port ) +
-              "_" + to_string( dst_port )).get( GRB_DoubleAttr_X ));
+              "_" + to_string( dst_port )).get( GRB_DoubleAttr_X );
+          if ( is_connected ){
+            episode_bw.add_elem_by( src_dev, dst_dev, delta);
+            sparse_episode_bw[ src_dev ][ dst_dev ] += delta;
+          }
         }
       }
     }
-
-    episode_bw.mul_by( double( cnfg.num_waves ) * double( cnfg.bwxstep_per_wave ) / double( num_ocs ));
   }
+
   catch ( GRBException e ) {
     if ( e.getErrorCode( ) != 10003 ) {
       cout << "Error code = " << e.getErrorCode( ) << endl;
@@ -191,7 +202,12 @@ ExitStatus OCSInterconnect::allocate_episode_bw_singleshot( ) {
     }
   }
   #endif //HAVE_GUROBI
-
+  for ( int i = 0; i < 8; i++ ) {
+    for (int j=0; j < 8; j++ ){
+      std::cout << episode_bw.get_elem( i, j) << " ";
+    }
+    std::cout << std::endl;
+  }
   return ExitStatus::SUCCESS;
 }
 
@@ -201,15 +217,16 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
   try {
     Matrix2D< double > normal_tm( num_gpus, num_gpus );
     normalize_tm( normal_tm );
+    cout << "eff_num_gpus=" << eff_num_gpus << endl;
     model->set( GRB_IntParam_OutputFlag, 0 );
     /* create the permutation decisions */
-    GRBVar ***perms; /* a num_ocs x port_count x port_count binary variable */
+    GRBVar ***perms; /* a num_ocs x eff_num_gpus x eff_num_gpus binary variable */
     perms = new GRBVar **[num_ocs];
     for ( int i = 0; i < num_ocs; i ++ ) {
-      perms[ i ] = new GRBVar *[port_count];
-      for ( int j = 0; j < port_count; j ++ ) {
-        perms[ i ][ j ] = new GRBVar[port_count];
-        for ( int k = 0; k < port_count; k ++ ) {
+      perms[ i ] = new GRBVar *[eff_num_gpus];
+      for ( int j = 0; j < eff_num_gpus; j ++ ) {
+        perms[ i ][ j ] = new GRBVar[eff_num_gpus];
+        for ( int k = 0; k < eff_num_gpus; k ++ ) {
           perms[ i ][ j ][ k ] = model->addVar( 0.0,
                                                 1.0,
                                                 0.0,
@@ -223,9 +240,9 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
 
     /* permutation row constraints */
     for ( int sw = 0; sw < num_ocs; sw ++ ) {
-      for ( int src = 0; src < port_count; src ++ ) {
+      for ( int src = 0; src < eff_num_gpus; src ++ ) {
         GRBLinExpr expr = 0;
-        for ( int dst = 0; dst < port_count; dst ++ ) {
+        for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
           expr += perms[ sw ][ src ][ dst ];
         }
         string s = "egress_constraint_sw" + to_string( sw ) + "_port" + to_string( src );
@@ -235,9 +252,9 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
 
     /* permutation column constraints */
     for ( int sw = 0; sw < num_ocs; sw ++ ) {
-      for ( int dst = 0; dst < port_count; dst ++ ) {
+      for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
         GRBLinExpr expr = 0;
-        for ( int src = 0; src < port_count; src ++ ) {
+        for ( int src = 0; src < eff_num_gpus; src ++ ) {
           expr += perms[ sw ][ src ][ dst ];
         }
         string s = "ingress_constraint_sw" + to_string( sw ) + "_port" + to_string( dst );
@@ -247,15 +264,15 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
 
     /* create device-to-device bandwidths */
     GRBLinExpr **bw;
-    bw = new GRBLinExpr *[num_gpus];
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      bw[ src_dev ] = new GRBLinExpr[num_gpus];
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    bw = new GRBLinExpr *[eff_num_gpus];
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      bw[ src_dev ] = new GRBLinExpr[eff_num_gpus];
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         bw[ src_dev ][ dst_dev ] = 0;
       }
     }
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
@@ -264,8 +281,8 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
       }
     }
     GRBLinExpr rate;
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         if ( normal_tm.get_elem( src_dev, dst_dev ) > 0 ) {
           double alpha = normal_tm.get_elem( src_dev, dst_dev );
           rate += ( bw[ src_dev ][ dst_dev ] * alpha );
@@ -287,22 +304,21 @@ ExitStatus OCSInterconnect::setup_optimal_solver_multishot( ) {
 
 ExitStatus OCSInterconnect::allocate_episode_bw_multishot( ) {
 #ifdef HAVE_GUROBI
-
   try {
     Matrix2D< double > normal_tm( num_gpus, num_gpus );
     normalize_tm( normal_tm );
     model->reset( ); /* reset solution states */
     /* create device-to-device bandwidths */
     GRBLinExpr **bw;
-    bw = new GRBLinExpr *[num_gpus];
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      bw[ src_dev ] = new GRBLinExpr[num_gpus];
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    bw = new GRBLinExpr *[eff_num_gpus];
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      bw[ src_dev ] = new GRBLinExpr[eff_num_gpus];
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         bw[ src_dev ][ dst_dev ] = 0;
       }
     }
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
@@ -315,8 +331,8 @@ ExitStatus OCSInterconnect::allocate_episode_bw_multishot( ) {
 
     model->update( );
     GRBLinExpr rate;
-    for ( int src_dev = 0; src_dev < num_gpus; src_dev ++ ) {
-      for ( int dst_dev = 0; dst_dev < num_gpus; dst_dev ++ ) {
+    for ( int src_dev = 0; src_dev < eff_num_gpus; src_dev ++ ) {
+      for ( int dst_dev = 0; dst_dev < eff_num_gpus; dst_dev ++ ) {
         if ( normal_tm.get_elem( src_dev, dst_dev ) > 0 ) {
           double alpha = normal_tm.get_elem( src_dev, dst_dev );
           rate += ( bw[ src_dev ][ dst_dev ] * alpha );
@@ -329,19 +345,22 @@ ExitStatus OCSInterconnect::allocate_episode_bw_multishot( ) {
     model->update( );
     model->optimize( );
     episode_bw.fill_zeros( );
-    for ( int src_port = 0; src_port < port_count; src_port ++ ) {
-      for ( int dst_port = 0; dst_port < port_count; dst_port ++ ) {
+    double delta = double( cnfg.num_waves ) * double( cnfg.bwxstep_per_wave ) / double( num_ocs );
+    for ( int src_port = 0; src_port < eff_num_gpus; src_port ++ ) {
+      for ( int dst_port = 0; dst_port < eff_num_gpus; dst_port ++ ) {
         for ( int ocs_no = 0; ocs_no < num_ocs; ocs_no ++ ) {
           uint16_t src_dev = port_map.at( ocs_no ).at( src_port )->dev_id;
           uint16_t dst_dev = port_map.at( ocs_no ).at( dst_port )->dev_id;
-          episode_bw.add_elem_by( src_dev, dst_dev, model->getVarByName( "perm_" + to_string( ocs_no ) +
+          bool is_connected = model->getVarByName( "perm_" + to_string( ocs_no ) +
               "_" + to_string( src_port ) +
-              "_" + to_string( dst_port )).get( GRB_DoubleAttr_X ));
+              "_" + to_string( dst_port )).get( GRB_DoubleAttr_X );
+          if ( is_connected ){
+            episode_bw.add_elem_by( src_dev, dst_dev, delta);
+            sparse_episode_bw[ src_dev ][ dst_dev ] += delta;
+          }
         }
       }
     }
-
-    episode_bw.mul_by( double( cnfg.num_waves ) * double( cnfg.bwxstep_per_wave ) / double( num_ocs ));
   }
   catch ( GRBException e ) {
     if ( e.getErrorCode( ) != 10003 ) {
@@ -356,7 +375,8 @@ ExitStatus OCSInterconnect::allocate_episode_bw_multishot( ) {
 ExitStatus OCSInterconnect::offline_bw_est( unordered_map< Device *, unordered_map< Device *, double>> &estimate ) {
   for ( uint16_t i = 0; i < num_gpus; i ++ ) {
     for ( uint16_t j = 0; j < num_gpus; j ++ ) {
-      estimate[ &gpus[ i ]][ &gpus[ j ]] = cnfg.num_waves * cnfg.bwxstep_per_wave;
+//      estimate[ &gpus[ i ] ][ &gpus[ j ] ] = cnfg.num_waves * cnfg.bwxstep_per_wave / double( num_ocs ); // generates runtime lowerbound
+      estimate[ &gpus[ i ] ][ &gpus[ j ] ] = cnfg.num_waves * cnfg.bwxstep_per_wave / 8.0; // generates runtime lowerbound
       if (( i > num_ocs || j > num_ocs ))//&& single_shot
         estimate[ &gpus[ i ]][ &gpus[ j ]] = 1; /* something very small */
     }
@@ -364,4 +384,35 @@ ExitStatus OCSInterconnect::offline_bw_est( unordered_map< Device *, unordered_m
   return ExitStatus::SUCCESS;
 }
 
+ExitStatus OCSInterconnect::reset_routing_step_counters( ){
+  for ( auto &s : sparse_episode_bw ){
+    for ( auto &d : s.second ){
+      sparse_episode_bw_budget[ s.first ][ d.first ] = d.second;
+    }
+  }
+  return ExitStatus::SUCCESS;
+}
 
+ExitStatus OCSInterconnect::is_routing_feasible( Packet* pkt, bool &is_bw_avail ){
+  if ( curr_step % ( cnfg.dec_interval + cnfg.interconnect_reconf_delay ) < cnfg.interconnect_reconf_delay ) {
+    /* we are still in interconnect transition mode; no packet transfer is feasible */
+    is_bw_avail = false;
+    return ExitStatus::SUCCESS;
+  }
+
+  try {
+    is_bw_avail = ( sparse_episode_bw_budget.at( pkt->src->dev_id ).at( pkt->dst->dev_id ) >= pkt->num_bytes );
+    if ( is_bw_avail )
+      sparse_episode_bw_budget.at( pkt->src->dev_id ).at( pkt->dst->dev_id ) -= pkt->num_bytes;
+  }
+  catch ( const std::out_of_range& oor ) {
+    is_bw_avail = false;
+  }
+
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus OCSInterconnect::set_eff_num_gpus( const uint16_t n ) {
+  eff_num_gpus = n;
+  return ExitStatus::SUCCESS;
+}
