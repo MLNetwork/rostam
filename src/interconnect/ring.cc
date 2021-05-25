@@ -4,7 +4,7 @@
 ExitStatus RingInterconnect::setup_ilp_solver( ) {
 #ifdef HAVE_GUROBI
 
-  Matrix2D< double > normal_tm( num_gpus, num_gpus );
+  Matrix2D< double > normal_tm( eff_num_gpus, eff_num_gpus );
   normalize_tm( normal_tm );
 
   /* Create an environment */
@@ -14,16 +14,16 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
   env->start( );
   model = new GRBModel( *env );
   model->set( GRB_IntParam_OutputFlag, 0 );
-  /* create the wavelength allocation integer decisions: lambda[ num_gpus, num_gpus ] */
+  /* create the wavelength allocation integer decisions: lambda[ eff_num_gpus, eff_num_gpus ] */
   int num_directions = 2;
   lambda = new GRBVar ***[num_directions];
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     lambda[ dir_no ] = new GRBVar **[num_rings];
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      lambda[ dir_no ][ ring_no ] = new GRBVar *[num_gpus];
-      for ( int g1 = 0; g1 < num_gpus; g1 ++ ) {
-        lambda[ dir_no ][ ring_no ][ g1 ] = new GRBVar[num_gpus];
-        for ( int g2 = 0; g2 < num_gpus; g2 ++ ) {
+      lambda[ dir_no ][ ring_no ] = new GRBVar *[eff_num_gpus];
+      for ( int g1 = 0; g1 < eff_num_gpus; g1 ++ ) {
+        lambda[ dir_no ][ ring_no ][ g1 ] = new GRBVar[eff_num_gpus];
+        for ( int g2 = 0; g2 < eff_num_gpus; g2 ++ ) {
           lambda[ dir_no ][ ring_no ][ g1 ][ g2 ] = model->addVar( 0.0,
                                                                    num_waves / num_rings / 2,
                                                                    0.0,
@@ -38,31 +38,31 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
   }
 
   /* wavelength no conflict constraints */
-  GRBLinExpr ***segments; /* num_directions x num_rings x num_gpus */
+  GRBLinExpr ***segments; /* num_directions x num_rings x eff_num_gpus */
   segments = new GRBLinExpr** [num_directions];
   for ( int dir_no = 0; dir_no < num_directions; dir_no++ ){
     segments[dir_no] = new GRBLinExpr* [num_rings];
     for ( int ring_no = 0; ring_no < num_rings; ring_no++ ){
-      segments[dir_no][ring_no] = new GRBLinExpr[num_gpus];
+      segments[dir_no][ring_no] = new GRBLinExpr[eff_num_gpus];
       }
     }
-//  for ( int seg_no = 0; seg_no < num_gpus; seg_no ++ ) {
+//  for ( int seg_no = 0; seg_no < eff_num_gpus; seg_no ++ ) {
 //    segments[ seg_no ] = 0;
 //  }
   for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-    for ( int src = 0; src < num_gpus; src ++ ) {
-      for ( int dst = src; dst < src + num_gpus; dst ++ ) {
+    for ( int src = 0; src < eff_num_gpus; src ++ ) {
+      for ( int dst = src; dst < src + eff_num_gpus; dst ++ ) {
         for ( int seg_no = src; seg_no < dst; seg_no ++ ) {
-          segments[ 0 ][ ring_no ][ seg_no % num_gpus ] += lambda[ 0 ][ ring_no ][ src ][ dst % num_gpus ];
+          segments[ 0 ][ ring_no ][ seg_no % eff_num_gpus ] += lambda[ 0 ][ ring_no ][ src ][ dst % eff_num_gpus ];
         }
       }
     }
   }
   for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-    for ( int src = 0; src < num_gpus; src ++ ) {
-      for ( int dst = src; dst < src + num_gpus; dst ++ ) {
+    for ( int src = 0; src < eff_num_gpus; src ++ ) {
+      for ( int dst = src; dst < src + eff_num_gpus; dst ++ ) {
         for ( int seg_no = src; seg_no < dst; seg_no ++ ) {
-          segments[ 1 ][ ring_no ][ seg_no % num_gpus ] += lambda[ 1 ][ ring_no ][ dst % num_gpus ][ src ];
+          segments[ 1 ][ ring_no ][ seg_no % eff_num_gpus ] += lambda[ 1 ][ ring_no ][ dst % eff_num_gpus ][ src ];
         }
       }
     }
@@ -71,7 +71,7 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
   /* wavelengths should not share any segments */
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      for ( int seg_no = 0; seg_no < num_gpus; seg_no ++ ) {
+      for ( int seg_no = 0; seg_no < eff_num_gpus; seg_no ++ ) {
         model->addConstr( segments[ dir_no ][ ring_no ][ seg_no ],
                           GRB_LESS_EQUAL,
                           num_waves / num_rings / 2,
@@ -86,7 +86,7 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
    * talk to their own self :D (to speed-up the solver) */
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      for ( int g = 0; g < num_gpus; g ++ ) {
+      for ( int g = 0; g < eff_num_gpus; g ++ ) {
         model->addConstr( lambda[ dir_no ][ ring_no ][ g ][ g ],
                           GRB_EQUAL,
                           0.0,
@@ -95,15 +95,15 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
       }
     }
   }
-  GRBLinExpr** bw; /* num_gpus x num_gpus */
-  bw = new GRBLinExpr*[num_gpus];
-  for ( int src = 0; src < num_gpus; src ++ ) {
-    bw[src] = new GRBLinExpr[num_gpus];
+  GRBLinExpr** bw; /* eff_num_gpus x eff_num_gpus */
+  bw = new GRBLinExpr*[eff_num_gpus];
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    bw[src] = new GRBLinExpr[eff_num_gpus];
   }
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      for ( int src = 0; src < num_gpus; src ++ ) {
-        for ( int dst = 0; dst < num_gpus; dst ++ ) {
+      for ( int src = 0; src < eff_num_gpus; src ++ ) {
+        for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
           bw[ src ][ dst ] += lambda[ dir_no ][ ring_no ][ src ][ dst ];
         }
       }
@@ -112,8 +112,8 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
   /* going to maximize min_throughput */
   GRBVar
       min_throughput = model->addVar( 0.0, GRB_INFINITY, 1.0 /* obj_func_coeff */, GRB_CONTINUOUS, "min_throughput" );
-  for ( int src = 0; src < num_gpus; src ++ ) {
-    for ( int dst = 0; dst < num_gpus; dst ++ ) {
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
       if ( normal_tm.get_elem( src, dst ) > 0 ) {
         model->addConstr( min_throughput,
                           GRB_LESS_EQUAL,
@@ -131,13 +131,14 @@ ExitStatus RingInterconnect::setup_ilp_solver( ) {
 ExitStatus RingInterconnect::allocate_episode_bw_ilp( ) {
 #ifdef HAVE_GUROBI
 
-  Matrix2D< double > normal_tm( num_gpus, num_gpus );
+  Matrix2D< double > normal_tm( eff_num_gpus, eff_num_gpus );
   normalize_tm( normal_tm );
+//  cout << normal_tm << endl;
   model->reset( ); /* reset solution states */
   model->update( );
   /* first, try to remove any previous constraint related to the traffic matrix */
-  for ( int src = 0; src < num_gpus; src ++ ) {
-    for ( int dst = 0; dst < num_gpus; dst ++ ) {
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
       string s = "throughput_constraint_" + to_string( src ) + "_" + to_string( dst );
       try {
         model->remove( model->getConstrByName( s ));
@@ -154,22 +155,22 @@ ExitStatus RingInterconnect::allocate_episode_bw_ilp( ) {
   model->update( ); /* gurobi is lazy :D */
   /* then, add the new traffic constraints */
   int num_directions = 2;
-  GRBLinExpr** bw; /* num_gpus x num_gpus */
-  bw = new GRBLinExpr*[num_gpus];
-  for ( int src = 0; src < num_gpus; src ++ ) {
-    bw[src] = new GRBLinExpr[num_gpus];
+  GRBLinExpr** bw; /* eff_num_gpus x eff_num_gpus */
+  bw = new GRBLinExpr*[eff_num_gpus];
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    bw[src] = new GRBLinExpr[eff_num_gpus];
   }
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      for ( int src = 0; src < num_gpus; src ++ ) {
-        for ( int dst = 0; dst < num_gpus; dst ++ ) {
+      for ( int src = 0; src < eff_num_gpus; src ++ ) {
+        for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
           bw[ src ][ dst ] += lambda[ dir_no ][ ring_no ][ src ][ dst ];
         }
       }
     }
   }
-  for ( int src = 0; src < num_gpus; src ++ ) {
-    for ( int dst = 0; dst < num_gpus; dst ++ ) {
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
       string s = "throughput_constraint_" + to_string( src ) + to_string( dst );
       if ( normal_tm.get_elem( src, dst ) > 0 ) {
         model->addConstr( model->getVarByName( "min_throughput" ),
@@ -179,13 +180,15 @@ ExitStatus RingInterconnect::allocate_episode_bw_ilp( ) {
       }
     }
   }
+  model->getEnv().set(GRB_DoubleParam_TimeLimit, 10);
   model->update( );
   model->optimize( );
   episode_bw.fill_zeros( );
+
   for ( int dir_no = 0; dir_no < num_directions; dir_no ++ ) {
     for ( int ring_no = 0; ring_no < num_rings; ring_no ++ ) {
-      for ( int src = 0; src < num_gpus; src ++ ) {
-        for ( int dst = 0; dst < num_gpus; dst ++ ) {
+      for ( int src = 0; src < eff_num_gpus; src ++ ) {
+        for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
           episode_bw.add_elem_by( src,
                                   dst,
                                   ( model->getVarByName(
@@ -197,6 +200,23 @@ ExitStatus RingInterconnect::allocate_episode_bw_ilp( ) {
       }
     }
   }
+  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+    for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
+      double bitrate = episode_bw.get_elem(src, dst);
+      bool is_connected = ( bitrate > 0);
+      if ( is_connected ) {
+        sparse_episode_bw[ src ][ dst ] = bitrate;
+      }
+      }
+  }
+//  for ( int src = 0; src < eff_num_gpus; src ++ ) {
+//    for ( int dst = 0; dst < eff_num_gpus; dst ++ ) {
+//      double bitrate = episode_bw.get_elem( src, dst );
+//      cout << bitrate << " ";
+//    }
+//    cout << endl;
+//  }
+//  cout << "==========================" << endl;
 #endif //HAVE_GUROBI
   return ExitStatus::SUCCESS;
 }
@@ -204,7 +224,7 @@ ExitStatus RingInterconnect::allocate_episode_bw_ilp( ) {
 ExitStatus RingInterconnect::allocate_episode_bw_mcf( ) {
 #ifdef HAVE_GUROBI
 
-  Matrix2D< double > normal_tm( num_gpus, num_gpus );
+  Matrix2D< double > normal_tm( eff_num_gpus, eff_num_gpus );
   normalize_tm( normal_tm );
   try {
     GRBModel mcf_model = GRBModel( GRBEnv( ));
@@ -215,12 +235,12 @@ ExitStatus RingInterconnect::allocate_episode_bw_mcf( ) {
     using EdgeWeight = tuple< uint16_t, uint16_t, double >;
     vector< EdgeWeight > flow_weights;
     Graph< uint16_t > flow_graph;
-    for ( src = 0; src < num_gpus; src ++ ) {
-      for ( dst = 0; dst < num_gpus; dst ++ ) {
+    for ( src = 0; src < eff_num_gpus; src ++ ) {
+      for ( dst = 0; dst < eff_num_gpus; dst ++ ) {
         if ( normal_tm.get_elem( src, dst ) > 0 ) {
           flow_weights.emplace_back( src, dst, - 1.0 / normal_tm.get_elem( src, dst ));
           flow_graph.add_edge( src, dst );
-        } else if ( dst == ( src + 1 ) % num_gpus ) {
+        } else if ( dst == ( src + 1 ) % eff_num_gpus ) {
           flow_weights.emplace_back( src, dst, 0 ); /* dummy edge weight */
           flow_graph.add_edge( src, dst );
         }
@@ -255,15 +275,15 @@ ExitStatus RingInterconnect::allocate_episode_bw_mcf( ) {
     /* capacity constraint:
      * the total flow that can pass through each segment is bounded by
      * that segment's capacity */
-    for ( int seg_no = 0; seg_no < num_gpus; seg_no ++ ) {
+    for ( int seg_no = 0; seg_no < eff_num_gpus; seg_no ++ ) {
       GRBLinExpr total_flow = 0;
       for ( auto &flow_weight : flow_weights ) {
         src = get< 0 >( flow_weight );
         dst = get< 1 >( flow_weight );
         int seg_offset = ( seg_no - int( src ));
-        seg_offset = ( seg_offset < 0 ? num_gpus - seg_offset : seg_offset );
+        seg_offset = ( seg_offset < 0 ? eff_num_gpus - seg_offset : seg_offset );
         int dst_offset = ( int( dst ) - int( src ));
-        dst_offset = ( dst_offset < 0 ? num_gpus - dst_offset : dst_offset );
+        dst_offset = ( dst_offset < 0 ? eff_num_gpus - dst_offset : dst_offset );
         if ( dst_offset > seg_offset ) {
           total_flow += mcf_model.getVarByName( "flow_" + to_string( src ) + "to" + to_string( dst ));
         }
@@ -278,7 +298,7 @@ ExitStatus RingInterconnect::allocate_episode_bw_mcf( ) {
     mcf_model.optimize( );
 
     /* rounding */
-    Matrix2D< uint16_t > allocation( num_gpus, num_gpus );
+    Matrix2D< uint16_t > allocation( eff_num_gpus, eff_num_gpus );
     double wave_inv = 1.0 / double( num_waves );
     for ( auto &flow_weight : flow_weights ) {
       src = get< 0 >( flow_weight );
@@ -293,15 +313,15 @@ ExitStatus RingInterconnect::allocate_episode_bw_mcf( ) {
     }
 
     /* handle rounding errors */
-    for ( int seg_no = 0; seg_no < num_gpus; seg_no ++ ) {
+    for ( int seg_no = 0; seg_no < eff_num_gpus; seg_no ++ ) {
       int total_waves = 0;
       for ( auto &flow_weight : flow_weights ) {
         src = get< 0 >( flow_weight );
         dst = get< 1 >( flow_weight );
         int seg_offset = ( seg_no - int( src ));
-        seg_offset = ( seg_offset < 0 ? num_gpus - seg_offset : seg_offset );
+        seg_offset = ( seg_offset < 0 ? eff_num_gpus - seg_offset : seg_offset );
         int dst_offset = ( int( dst ) - int( src ));
-        dst_offset = ( dst_offset < 0 ? num_gpus - dst_offset : dst_offset );
+        dst_offset = ( dst_offset < 0 ? eff_num_gpus - dst_offset : dst_offset );
         if ( dst_offset > seg_offset ) {
           total_waves += allocation.get_elem( src, dst );
           /* if exceeding the total number of available waves,
@@ -355,6 +375,8 @@ ExitStatus RingInterconnect::offline_bw_est( std::unordered_map< Device *,
 RingInterconnect::RingInterconnect( uint16_t dev_id,
                                     GPU *gpus,
                                     uint16_t num_gpus,
+                                    double ingress_link_speed,
+                                    double egress_link_speed,
                                     TMEstimatorBase *tm_estimator,
                                     const SimConfig &cnfg,
                                     const uint16_t num_waves,
@@ -364,6 +386,8 @@ RingInterconnect::RingInterconnect( uint16_t dev_id,
                                     const std::string log_dir ) : BaseInterconnect( dev_id,
                                                                                     gpus,
                                                                                     num_gpus,
+                                                                                    ingress_link_speed,
+                                                                                    egress_link_speed,
                                                                                     tm_estimator,
                                                                                     cnfg,
                                                                                     log_dir ),
@@ -376,10 +400,40 @@ RingInterconnect::RingInterconnect( uint16_t dev_id,
                                                                   bw_decision_type( bw_decision_type ),
                                                                   tolerable_dist( tolerable_dist ),
                                                                   num_rings( num_rings ) {
-  if ( bw_decision_type == BWDecisionType::ILP ) {
-    setup_ilp_solver( );
-  }
+
 }
 
 RingInterconnect::~RingInterconnect( ) {
+}
+
+ExitStatus RingInterconnect::reset_routing_step_counters( ){
+  for ( auto &s : sparse_episode_bw ){
+    for ( auto &d : s.second ){
+      sparse_episode_bw_budget[ s.first ][ d.first ] = d.second;
+    }
+  }
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus RingInterconnect::is_routing_feasible( Packet* pkt, bool &is_bw_avail ){
+  if ( curr_step % ( cnfg.dec_interval + cnfg.interconnect_reconf_delay ) < cnfg.interconnect_reconf_delay ) {
+    /* we are still in interconnect transition mode; no packet transfer is feasible */
+    is_bw_avail = false;
+    return ExitStatus::SUCCESS;
+  }
+
+  try {
+    is_bw_avail = ( sparse_episode_bw_budget.at( pkt->src->dev_id ).at( pkt->dst->dev_id ) >= pkt->num_bytes );
+    if ( is_bw_avail )
+      sparse_episode_bw_budget.at( pkt->src->dev_id ).at( pkt->dst->dev_id ) -= pkt->num_bytes;
+  }
+  catch ( const std::out_of_range& oor ) {
+    is_bw_avail = false;
+  }
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus RingInterconnect::set_eff_num_gpus( uint16_t n ) {
+  eff_num_gpus = n;
+  return ExitStatus::SUCCESS;
 }
