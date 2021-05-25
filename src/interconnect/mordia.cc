@@ -162,12 +162,16 @@ ExitStatus MordiaInterconnect::offline_bw_est( std::unordered_map< Device *,
 MordiaInterconnect::MordiaInterconnect( uint16_t dev_id,
                                         GPU *gpus,
                                         uint16_t num_gpus,
+                                        double ingress_link_speed,
+                                        double egress_link_speed,
                                         TMEstimatorBase *tm_estimator,
                                         const SimConfig &cnfg,
                                         const uint16_t num_waves,
                                         const std::string log_dir ) : BaseInterconnect( dev_id,
                                                                                         gpus,
                                                                                         num_gpus,
+                                                                                        ingress_link_speed,
+                                                                                        egress_link_speed,
                                                                                         tm_estimator,
                                                                                         cnfg,
                                                                                         log_dir ),
@@ -196,4 +200,9 @@ MordiaInterconnect::~MordiaInterconnect( ) {
   model = nullptr;
   lambda = nullptr;
 #endif //HAVE_GUROBI
+}
+
+ExitStatus MordiaInterconnect::is_routing_feasible( Packet*, bool & ){
+  throw std::runtime_error( "is_routing_feasible is not implemented for mordia." ); //ToDo: implement
+  return ExitStatus::SUCCESS;
 }

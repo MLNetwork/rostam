@@ -20,6 +20,8 @@ GRBEnv *env;
   MordiaInterconnect( uint16_t dev_id,
                       GPU *gpus,
                       uint16_t num_gpus,
+                      double ingress_link_speed,
+                      double egress_link_speed,
                       TMEstimatorBase *tm_estimator,
                       const SimConfig &cnfg,
                       uint16_t num_waves,
@@ -30,6 +32,8 @@ GRBEnv *env;
   MordiaInterconnect &operator=( const MordiaInterconnect & ) = delete;
 
   ExitStatus offline_bw_est( std::unordered_map< Device *, std::unordered_map< Device *, double>> &estimate ) override;
+
+  ExitStatus is_routing_feasible( Packet* pkt, bool &is_feasible ) override;
 
   virtual ~MordiaInterconnect( );
 
