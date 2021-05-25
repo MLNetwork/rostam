@@ -29,7 +29,7 @@ ExitStatus ElectricalSwitch::find_matchings( Matrix2D< double > &tm_est, Matrix2
 }
 
 ExitStatus ElectricalSwitch::allocate_episode_bw( ) {
-  tm_estimator->update_tm_est( );
+  tm_estimator->update_tm_est( ).ok( );
   Matrix2D< double > match( num_gpus, num_gpus );
   for ( int src = 0; src < num_gpus; src ++ ) {
     double out_traffic = 0;
@@ -79,5 +79,11 @@ ExitStatus ElectricalSwitch::offline_bw_est( std::unordered_map< Device *,
       estimate[ &gpus[ i ]][ &gpus[ j ]] = bwxstep_per_port;
     }
   }
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus ElectricalSwitch::is_routing_feasible( Packet*, bool &is_feasible ){
+//  is_bw_avail = ( step_bytes_budget.get_elem( pkt->src, pkt->dst ) >= pkt->num_bytes );
+  is_feasible = true;
   return ExitStatus::SUCCESS;
 }
