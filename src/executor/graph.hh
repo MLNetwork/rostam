@@ -31,7 +31,7 @@ class Graph {
 
   ExitStatus topological_sort( std::stack< NodeType > &stack );
 
-  virtual ExitStatus summary( );
+  virtual ExitStatus summary( ) const;
 
   virtual ~Graph( ) = default;
 
@@ -98,7 +98,7 @@ ExitStatus Graph< NodeType >::descendants_map( std::unordered_map< NodeType,
 }
 
 template< class NodeType >
-ExitStatus Graph< NodeType >::summary( ) {
+ExitStatus Graph< NodeType >::summary( ) const {
   for ( auto n : adj ) {
     std::cout << n.first << ": ";
     for ( auto s : n.second ) {
@@ -111,7 +111,7 @@ ExitStatus Graph< NodeType >::summary( ) {
 
 class CG : public Graph< Op * > {
  public:
-  ExitStatus summary( ) override;
+  ExitStatus summary( ) const override;
 
   ExitStatus release_ops( );
 
@@ -122,6 +122,8 @@ class CG : public Graph< Op * > {
   ExitStatus priority_sort( std::map< uint32_t, Op * > &prior_sorted );
 
   ExitStatus critical_path_len( int &max_depth );
+
+  ExitStatus critical_path_load( Step &load );
 
   ExitStatus set_global_batchsize( uint16_t bs ) const;
 

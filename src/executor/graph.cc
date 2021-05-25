@@ -2,17 +2,44 @@
 
 using namespace std;
 
-ExitStatus CG::summary( ) {
+ExitStatus CG::summary( ) const {
   uint64_t size;
   uint64_t total_mem_size = 0;
+  uint64_t total_tensor_size = 0;
+  uint64_t total_var_size = 0;
+  uint64_t total_net_size = 0;
+  Op* biggest_net_op;
+  uint64_t biggest_net_op_size = 0;
   for ( auto n : adj ) {
     n.first->get_mem_size( size );
     total_mem_size += size;
+    switch ( n.first->type ) {
+      case OpType::COMPUTE:
+        total_tensor_size += size;
+        break;
+      case OpType::MEMORY:
+        total_var_size += size;
+        break;
+      case OpType::NETWORK:
+        total_net_size += size;
+        if ( size > biggest_net_op_size ){
+          biggest_net_op_size = size;
+          biggest_net_op = n.first;
+        }
+      default:
+        break;
+    }
   }
-  cout << "total_mem_size=" << total_mem_size << endl;
-  int max_depth;
-  critical_path_len( max_depth );
-  cout << "critical computational path length: " << max_depth << endl;
+  cout << "total_mem_size="     << total_mem_size * 1e-9    << " (GB), "
+       << "total_tensor_size="  << total_tensor_size * 1e-9 << " (GB), "
+       << "total_net_size="     << total_net_size  * 1e-9   << " (GB), "
+       << "total_var_size="     << total_var_size  * 1e-9   << " (GB), "
+//       << "biggest_net_op="     << biggest_net_op->name      << ", "
+//       << "biggest_net_op_size="<< biggest_net_op_size * 1e-6 << " (MB)."
+       << endl;
+//  int max_depth;
+//  critical_path_len( max_depth );
+//  cout << "critical computational path length: " << max_depth << endl;
   return ExitStatus::SUCCESS;
 }
 
@@ -28,9 +55,9 @@ ExitStatus CG::summary( const string log_dir ) {
       log_file << static_cast<CompOp *>(n.first)->comp_time << " ";
   }
   cout << "total_mem_size=" << total_mem_size << endl;
-  int max_depth;
-  critical_path_len( max_depth );
-  cout << "critical computational path length: " << max_depth << endl;
+//  int max_depth;
+//  critical_path_len( max_depth );
+//  cout << "critical computational path length: " << max_depth << endl;
   return ExitStatus::SUCCESS;
 }
 
@@ -59,10 +86,14 @@ ExitStatus CG::from_graph_profile( std::string filename, const double step_size_
     for ( int i = 0; i < profile.nodes_size( ); i ++ ) {
       const graph_profile::Profile::Op &op = profile.nodes( i );
       switch ( op.op_type( )) {
-        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_COMPUTE:
-          comp_time_steps = Step( double( op.comp_time_us( )) * step_ratio );
+        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_COMPUTE:{
+          comp_time_steps = Step( double( op.comp_time_us( )) * step_ratio ) / 2;
           uint32_t output_bytes;
-          output_bytes = op.output_bytes( );
+          output_bytes = op.output_bytes( ) / 2;
+          string name = op.name( );
+          size_t found = name.find( "Reshape" );
+          if ( found != std::string::npos )
+            output_bytes = 0;
 
           if ( op_list.count( op.name( )) == 0 ) {
             std::map< uint16_t, Step > comp_time_map;
@@ -89,9 +120,9 @@ ExitStatus CG::from_graph_profile( std::string filename, const double step_size_
               }
             }
           }
-          op_list.emplace( op.name( ), cn );
+          op_list.emplace( op.name( ), cn );}
           break;
-        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_MEMORY:
+        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_MEMORY:{
           switch ( op.mem_type( )) {
             case graph_profile::Profile::Op::MemType::Profile_Op_MemType_CONSTANT:throw runtime_error( "CONSTANT MemType is deprecated. Please use READVARIABLE/WRITEVARIABLE." );
               break;
@@ -108,11 +139,11 @@ ExitStatus CG::from_graph_profile( std::string filename, const double step_size_
               throw runtime_error( "Not expected INT_MIN_SENTINEL_DO_NOT_USE_" );
           }
           mn = new MemOp( op.name( ), OpType::MEMORY, nullptr, 0, mem_type, op.num_bytes( ), "c3" );
-          op_list.emplace( op.name( ), mn );
+          op_list.emplace( op.name( ), mn );}
           break;
-        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_CONTROLDEPENDENCY:
+        case graph_profile::Profile::Op::OpType::Profile_Op_OpType_CONTROLDEPENDENCY:{
           nopn = new CntrlOp( op.name( ), OpType::CONTROL_DEPENDENCY, nullptr, 0, "c4" );
-          op_list.emplace( op.name( ), nopn );
+          op_list.emplace( op.name( ), nopn );}
           break;
         default: throw runtime_error( "Cannot parse all op types." );
       }
@@ -200,6 +231,29 @@ ExitStatus CG::critical_path_len( int &max_depth ) {
     depth_map[ op ] = depth;
     if ( depth > max_depth ) {
       max_depth = depth;
+    }
+    stack.pop( );
+  }
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus CG::critical_path_load( Step &load ) {
+  load = 0;
+  std::stack< Op * > stack;
+  topological_sort( stack );
+  map< Op *, Step > load_map;
+  while ( ! stack.empty( )) {
+    Op *op = stack.top( );
+    Step latest_time = 0;
+    for ( auto pred : reverse_adj.at( op )) {
+      latest_time = ( latest_time > load_map.at( pred ) ? latest_time : load_map.at( pred ));
+    }
+    if ( op->type == OpType::COMPUTE ) {
+      latest_time += dynamic_cast<CompOp *>( op )->comp_time;
+    }
+    load_map[ op ] = latest_time;
+    if ( latest_time > load ) {
+      load = latest_time;
     }
     stack.pop( );
   }
