@@ -27,7 +27,9 @@ def run_experiments():
                     token_found = True
                     break
     
-            cmnd = f'./{topo_cmnd} {cnfg.model_name} "--step_size_sec {cnfg.step_size_sec} --strategy {cnfg.strategy}"'
+            cmnd = f'./{topo_cmnd} {cnfg.model_name}'
+            if topo_cmnd == 'run_ocs.sh':
+                cmnd += f' "--step_size_sec {cnfg.step_size_sec} --strategy {cnfg.strategy} --single_shot"'
             print(cmnd)
             proc = Popen(cmnd, shell=True)
             proc.wait()

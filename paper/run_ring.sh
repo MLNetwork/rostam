@@ -29,12 +29,12 @@ do
     do
         for num_gpus in 1024 
         do
-            screen_name="ring_${model_name}_${num_waves}waves"
+            screen_name="sipml-ring_${model_name}_${num_waves}waves"
             echo $screen_name
             log_dir=$dir/logs/$model_name/$strategy/ring/ng$num_gpus/num_waves$num_waves/dec_interval_micro$dec_interval_micro/
-            echo $log_dir
             cmnd="sipml-ring --num_gpus $num_gpus --num_waves $num_waves --max_dist $max_dist --dec_interval_micro $dec_interval_micro --bw_decision_type ILP $num_prof_flag --input_profile $profile_dir --log_dir $log_dir $2"
-            screen -dmS $screen_name bash -c $cmnd
+            echo $cmnd
+            screen -dmS $screen_name bash -c "$cmnd"
         done
     done
     done

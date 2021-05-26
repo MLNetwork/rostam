@@ -21,8 +21,6 @@ do
     for reconf_delay_micro in 20 #20 100 300 1000 3000
         do
             dec_interval_micro=$(expr $reconf_delay_micro \* 5)
-    #for dec_interval_micro in 100
-    #    do
     if [ ["$2" == *"--single_shot"*] ]; then
         single_shot="single_shot"
     else
@@ -35,19 +33,19 @@ do
         num_prof_flag="--num_profiles 10"
     fi
 
-    for num_ocs in 16 #9 10 12 14 15 16 
+    for num_ocs in 20 #9 10 12 14 15 16 
     do
         for num_waves in 20 40 80 160 320 
         do
             for num_gpus in 1024 
             do
-                screen_name="ocs_${model_name}_${num_waves}waves"
+                screen_name="sipml-ocs_${model_name}_${num_waves}waves"
                 echo $screen_name
                 port_count=$num_gpus
                 log_dir=$dir/logs/$model_name/$strategy/ocs/ng$num_gpus/num_ocs$num_ocs/num_waves$num_waves/$single_shot/
                 cmnd="sipml-ocs --num_gpus $num_gpus --num_waves $num_waves --num_ocs $num_ocs --port_count $port_count --dec_interval_micro $dec_interval_micro --reconf_delay_micro $reconf_delay_micro --input_profile $profile_dir $num_prof_flag --log_dir $log_dir $2"
                 echo $cmnd
-                screen -dmS $screen_name bash -c $cmnd
+                screen -dmS $screen_name bash -c "$cmnd"
             done
         done
     done
