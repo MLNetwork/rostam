@@ -38,6 +38,7 @@ static struct option command_line_options[] = {
     { "num_profiles", required_argument, nullptr, 'n' },
     { "input_profile", required_argument, nullptr, 'i' },
     { "log_dir", required_argument, nullptr, 'l' },
+    { "step_size_sec", required_argument, nullptr, 'z' },
     { "help", no_argument, nullptr, 'h' },
     { 0, 0, 0, 0 }
 };
@@ -65,12 +66,13 @@ int main( int argc, char **argv ) {
   uint32_t mp_degree;
   uint32_t global_bs;
   int num_profiles = 10;
+  double step_size_sec = 1e-4;
   /* parse the input options */
   while ( true ) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    const int opt = getopt_long( argc, argv, "g:w:d:s:t:b:m:n:a:i:l:h", command_line_options, &option_index );
+    const int opt = getopt_long( argc, argv, "g:w:d:s:t:b:m:n:a:i:l:z:h", command_line_options, &option_index );
 
     /* Detect the end of the options. */
     if ( opt == - 1 )
@@ -118,6 +120,7 @@ int main( int argc, char **argv ) {
         break;
       case 'l':log_dir = optarg;
         break;
+      case 'z': step_size_sec = stod( optarg );
       case 'h':usage( argv[ 0 ] );
         return EXIT_SUCCESS;
         break;
@@ -141,7 +144,6 @@ int main( int argc, char **argv ) {
   else
     cout << "Directory created." << endl;
   cout << single_shot << endl;
-  const double step_size_sec = 1e-6;
   const uint32_t bwxstep_per_wave = BW_PER_WAVE_BYTES * step_size_sec;
   const Step mrr_reconf_delay = MRR_RECONF_DELAY_SEC / step_size_sec;
   const Step gpu_launch_latency = GPU_LAUNCH_LATENCY_SEC / step_size_sec;
