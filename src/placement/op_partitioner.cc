@@ -198,7 +198,7 @@ ExitStatus OpPartitionerParam::create_parallel_ops( const map< Op *, uint32_t > 
                                "param_create_parallel_ops" + std::to_string( num_splits ),
                                comp_op->comp_time_map,
                                comp_op->output_bytes_map );
-          comp_op->copy_scale_to( rep_op, 1. / double( num_splits ));
+          comp_op->copy_scale_to( rep_op, 1./ double( num_splits ));
           parallel_ops_map[ op ].push_back( rep_op );
         }
         assert( parallel_ops_map[ op ].size( ) == num_splits );
@@ -295,6 +295,7 @@ ExitStatus OpPartitionerAttribute::create_parallel_ops( const map< Op *, uint32_
   for ( auto &e : input_graph.adj ) {
     Op *op = e.first;
     uint32_t num_splits = splits_map.at( op );
+//    cout << num_splits << endl;
     if ( num_splits == 0 )
       cerr << "Zero-size partitioning";
     uint32_t num_bytes;
@@ -310,7 +311,13 @@ ExitStatus OpPartitionerAttribute::create_parallel_ops( const map< Op *, uint32_
                                "param_create_parallel_ops" + std::to_string( num_splits ),
                                comp_op->comp_time_map,
                                comp_op->output_bytes_map );
+          /* 1. use the same batch size as the original op */
+          uint16_t bs;
+          comp_op->get_batch_size( bs );
+          rep_op->set_batch_size( bs );
+          /* 2. overwrite the estimated time and memory */
           comp_op->copy_scale_to( rep_op, 1. / double( num_splits ));
+
           parallel_ops_map[ op ].push_back( rep_op );
         }
         assert( parallel_ops_map[ op ].size( ) == num_splits );
