@@ -119,13 +119,15 @@ void Matrix2D< dtype >::normalize_by_max( ) {
   dtype max_data = std::numeric_limits< dtype >::min( );
   for ( size_t row = 0; row < n_rows; row ++ ) {
     for ( size_t col = 0; col < n_cols; col ++ )
-      max_data = ( max_data < mat[ row ][ col ] ? mat[ row ][ col ] : max_data );
+        if ( row != col )
+            max_data = ( max_data < mat[ row ][ col ] ? mat[ row ][ col ] : max_data );
   }
   if ( max_data != 0 ) {
     for ( size_t row = 0; row < n_rows; row ++ ) {
       for ( size_t col = 0; col < n_cols; col ++ ) {
         mat[ row ][ col ] /= max_data;
-        mat[ row ][ col ] = double( int( 100. * mat[ row ][ col ] ) ) / 100.;
+        //mat[ row ][ col ] = double( int( 100. * mat[ row ][ col ] ) ) / 100.;
+        mat[ row ][ col ] = double( mat[ row ][ col ] );
       }
     }
   }
