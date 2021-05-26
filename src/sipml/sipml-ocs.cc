@@ -38,6 +38,7 @@ static struct option command_line_options[] = {
     { "log_dir", required_argument, nullptr, 'l' },
     { "single_shot", no_argument, nullptr, 's' },
     { "strategy", required_argument, nullptr, 't' },
+    { "step_size_sec", required_argument, nullptr, 'z' },
     { "help", no_argument, nullptr, 'h' },
     { 0, 0, 0, 0 }
 };
@@ -64,16 +65,15 @@ int main( int argc, char **argv ) {
   uint32_t dp_degree;
   uint32_t mp_degree;
   uint32_t global_bs;
-  const double step_size_sec = 1e-4;
-  const Step ocs_reconf_delay = OCS_RECONF_DELAY_SEC / step_size_sec;
-  Step interconnect_reconf_delay = ocs_reconf_delay;
+  double step_size_sec = 1e-4;
+  double interconnect_reconf_delay_sec = OCS_RECONF_DELAY_SEC;
   int num_profiles = 10;
   /* parse the input options */
   while ( true ) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    const int opt = getopt_long( argc, argv, "g:w:o:p:m:d:n:i:l:t:s:h", command_line_options, &option_index );
+    const int opt = getopt_long( argc, argv, "g:w:o:p:m:d:n:i:l:t:s:z:h", command_line_options, &option_index );
 
     /* Detect the end of the options. */
     if ( opt == - 1 )
@@ -89,7 +89,7 @@ int main( int argc, char **argv ) {
         break;
       case 'm':bw_dec_micro = stoul( optarg );
         break;
-      case 'd':interconnect_reconf_delay = stoul( optarg ) * 1e-6 / step_size_sec;
+      case 'd':interconnect_reconf_delay_sec = stod( optarg );
         break;
       case 'n': num_profiles = stoul( optarg );
         break;
@@ -117,6 +117,8 @@ int main( int argc, char **argv ) {
         break;
       case 's':single_shot = true;
         break;
+      case 'z': step_size_sec = stod( optarg ); 
+        break;
       case 'h':usage( argv[ 0 ] );
         return EXIT_SUCCESS;
         break;
@@ -139,7 +141,8 @@ int main( int argc, char **argv ) {
     cerr << "Error :  " << strerror(errno) << endl;
   else
     cout << "Directory created." << endl;
-  cout << single_shot << endl;
+  cout << "single_shot=" << single_shot << endl;
+  Step interconnect_reconf_delay = interconnect_reconf_delay_sec / step_size_sec;
   const uint32_t bwxstep_per_wave = BW_PER_WAVE_BYTES * step_size_sec;
   const Step gpu_launch_latency = GPU_LAUNCH_LATENCY_SEC / step_size_sec;
   const Step gpu_min_comp_time = GPU_MIN_COMP_TIME_SEC / step_size_sec;
