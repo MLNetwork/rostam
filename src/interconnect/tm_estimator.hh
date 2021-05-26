@@ -54,11 +54,13 @@ class TransportEstimator : public TMEstimatorBase {
   int num_transports;
  public:
   TransportEstimator( const int num_gpus, const std::string &log_dir ) : TMEstimatorBase(
-      num_gpus, log_dir ), transports( nullptr ), num_transports( 0 ) {
+      num_gpus, log_dir ), transports( nullptr ), num_transports( -1 ) {
     transports = new Transport *[num_gpus];
   }
 
   ExitStatus update_tm_est( ) override;
+
+  ExitStatus set_eff_num_transports( int n );
 
   ExitStatus bind_to_transports( GPU *gpus, int num_gpus );
 

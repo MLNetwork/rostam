@@ -29,10 +29,21 @@ void TMEstimatorBase::log( ) {
 
 ExitStatus TransportEstimator::update_tm_est( ) {
   Matrix2D< double > temp_tm( num_transports, num_transports );
+  Matrix2D< double > last_episode_tm( num_transports, num_transports );
+
   for ( int tp_no = 0; tp_no < num_transports; tp_no ++ ) {
     transports[ tp_no ]->get_tm_estimate( temp_tm ); //todo: make this more efficient by seperating into sent & recv bytes
-    tm_est.add_by( temp_tm );
+    last_episode_tm.add_by( temp_tm );
   }
+  tm_est.copy_from( last_episode_tm );
+
+//  for ( int i = 0; i < 8; i ++ ){
+//    for (int j =0; j < 8; j++ )
+//      std::cout << tm_est.get_elem(i, j) << " ";
+//    std::cout << std::endl;
+//  }
+//  std::cout << "------------------------------" << std::endl;
+
   return ExitStatus::SUCCESS;
 }
 
@@ -41,6 +52,11 @@ ExitStatus TransportEstimator::bind_to_transports( GPU *gpus, int num_gpus ) {
   for ( int gpu_no = 0; gpu_no < num_gpus; gpu_no ++ ) {
     transports[ gpu_no ] = gpus[ gpu_no ].tp;
   }
-  update_tm_est( );
+//  update_tm_est( );
+  return ExitStatus::SUCCESS;
+}
+
+ExitStatus TransportEstimator::set_eff_num_transports( int n ) {
+  num_transports = n;
   return ExitStatus::SUCCESS;
 }
