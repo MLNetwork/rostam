@@ -13,7 +13,7 @@
 #define GPU_MIN_COMP_TIME_SEC 0
 #define INTERCONNECT_LATENCY_SEC 0
 #define PCIE_LATENCY_SEC 1e-6
-#define GPU_MEMORY_BYTES 32e9 
+#define GPU_MEMORY_BYTES 100e9
 using Step = uint32_t;
 
 enum class InterType {
