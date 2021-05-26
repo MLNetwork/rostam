@@ -89,7 +89,7 @@ int main( int argc, char **argv ) {
         break;
       case 'm':bw_dec_micro = stoul( optarg );
         break;
-      case 'd':interconnect_reconf_delay_sec = stod( optarg );
+      case 'd':interconnect_reconf_delay_sec = stod( optarg ) * 1e-6;
         break;
       case 'n': num_profiles = stoul( optarg );
         break;
