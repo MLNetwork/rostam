@@ -24,7 +24,8 @@ class BasePlacement {
 
   ExitStatus add_async_netops( CG &output_graph );
 
-  ExitStatus add_sync_netops( CG &output_graph, std::unordered_map< Op *, std::vector< Op *>> &replicas );
+//  ExitStatus add_sync_netops( CG &output_graph, std::unordered_map< Op *, std::vector< Op *>> &replicas );
+  ExitStatus add_sync_netops( CG &output_graph, std::map< Op *, std::vector< Op *>> &replicas );
 
  public:
   virtual ExitStatus find_placement( CG &output_graph ) = 0;
@@ -42,6 +43,10 @@ class BasePlacement {
   BasePlacement &operator=( const BasePlacement & ) = delete;
 
   virtual ~BasePlacement( ) = default;
+
+  ExitStatus add_dp_sync_netops( CG &output_graph, std::map< Op *, std::vector< Op *>> &replicas, int dp_degree );
+
+  ExitStatus add_dp_ring_reduce( CG &graph, std::vector< Op * > replicas, int dp_degree );
 };
 
 #endif //SIPML_SRC_BASE_PLACEMENT_HH_
