@@ -9,11 +9,11 @@
 #define BW_PER_WAVE_BYTES 25e9/8
 #define MRR_RECONF_DELAY_SEC 20e-6
 #define OCS_RECONF_DELAY_SEC 30e-3
-#define GPU_LAUNCH_LATENCY_SEC 1e-6
-#define GPU_MIN_COMP_TIME_SEC 1e-6
+#define GPU_LAUNCH_LATENCY_SEC 0
+#define GPU_MIN_COMP_TIME_SEC 0
 #define INTERCONNECT_LATENCY_SEC 0
 #define PCIE_LATENCY_SEC 1e-6
-#define GPU_MEMORY_BYTES 16e9
+#define GPU_MEMORY_BYTES 32e9 
 using Step = uint32_t;
 
 enum class InterType {
@@ -29,8 +29,7 @@ struct SimConfig {
   const InterType inter_type;
   const uint32_t bwxstep_per_wave; /* in bytes per step */
   const Step dec_interval;
-  const Step mrr_reconf_delay;
-  const Step occ_reconf_delay;    /* in second */
+  const Step interconnect_reconf_delay;    /* in second */
   const Step gpu_launch_latency;  /* minimum steps it takes to launch a computation kernel op on the gpu */
   const Step gpu_min_comp_time;
   const Step interconnect_latency;
@@ -42,8 +41,7 @@ struct SimConfig {
              const InterType inter_type,
              const uint32_t bwxstep_per_wave,
              const Step dec_interval,
-             const Step mrr_reconf_delay,
-             const Step occ_reconf_delay,
+             const Step interconnect_reconf_delay,
              const Step gpu_launch_latency,
              const Step gpu_min_comp_time,
              const Step interconnect_latency,
@@ -53,8 +51,7 @@ struct SimConfig {
         inter_type( inter_type ),
         bwxstep_per_wave( bwxstep_per_wave ),
         dec_interval( dec_interval ),
-        mrr_reconf_delay( mrr_reconf_delay ),
-        occ_reconf_delay( occ_reconf_delay ),
+        interconnect_reconf_delay( interconnect_reconf_delay ),
         gpu_launch_latency( gpu_launch_latency ),
         gpu_min_comp_time( gpu_min_comp_time ),
         interconnect_latency( interconnect_latency ),
@@ -65,8 +62,7 @@ struct SimConfig {
     std::cout << "num_waves=" << num_waves << " "
               << "bwxstep_per_wave=" << bwxstep_per_wave << " "
               << "dec_interval=" << dec_interval << " "
-              << "mrr_reconf_delay=" << mrr_reconf_delay << " "
-              << "occ_reconf_delay=" << occ_reconf_delay << " "
+              << "interconnect_reconf_delay=" << interconnect_reconf_delay << " "
               << "gpu_launch_latency=" << gpu_launch_latency << " "
               << "gpu_min_comp_time=" << gpu_min_comp_time << " "
               << "interconnect_latency=" << interconnect_latency << " "

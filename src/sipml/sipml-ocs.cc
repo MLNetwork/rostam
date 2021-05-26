@@ -32,9 +32,12 @@ static struct option command_line_options[] = {
     { "num_ocs", required_argument, nullptr, 'o' },
     { "port_count", required_argument, nullptr, 'p' },
     { "dec_interval_micro", required_argument, nullptr, 'm' },
+    { "reconf_delay_micro", required_argument, nullptr, 'd' },
+    { "num_profiles", required_argument, nullptr, 'n' },
     { "input_profile", required_argument, nullptr, 'i' },
     { "log_dir", required_argument, nullptr, 'l' },
     { "single_shot", no_argument, nullptr, 's' },
+    { "strategy", required_argument, nullptr, 't' },
     { "help", no_argument, nullptr, 'h' },
     { 0, 0, 0, 0 }
 };
@@ -57,12 +60,20 @@ int main( int argc, char **argv ) {
 
   string input_profile;
   string log_dir;
+  bool is_auto_strategy = true;
+  uint32_t dp_degree;
+  uint32_t mp_degree;
+  uint32_t global_bs;
+  const double step_size_sec = 1e-4;
+  const Step ocs_reconf_delay = OCS_RECONF_DELAY_SEC / step_size_sec;
+  Step interconnect_reconf_delay = ocs_reconf_delay;
+  int num_profiles = 10;
   /* parse the input options */
   while ( true ) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    const int opt = getopt_long( argc, argv, "g:w:o:p:m:i:l:s:h", command_line_options, &option_index );
+    const int opt = getopt_long( argc, argv, "g:w:o:p:m:d:n:i:l:t:s:h", command_line_options, &option_index );
 
     /* Detect the end of the options. */
     if ( opt == - 1 )
@@ -75,10 +86,34 @@ int main( int argc, char **argv ) {
       case 'o':num_ocs = stoul( optarg );
         break;
       case 'p':port_count = stoul( optarg );
+        break;
       case 'm':bw_dec_micro = stoul( optarg );
+        break;
+      case 'd':interconnect_reconf_delay = stoul( optarg ) * 1e-6 / step_size_sec;
+        break;
+      case 'n': num_profiles = stoul( optarg );
+        break;
       case 'i':input_profile = optarg;
         break;
       case 'l':log_dir = optarg;
+        break;
+      case 't': {
+        string strat;
+        strat = optarg;
+        if ( ! strat.compare( "auto" ))
+          is_auto_strategy = true;
+        else {
+          is_auto_strategy = false;
+          string delimiter = ":";
+          size_t pos = strat.find( delimiter );
+          dp_degree = stoul( strat.substr( 0, pos ));
+          strat.erase( 0, pos + delimiter.length( ) );
+          pos = strat.find( delimiter );
+          mp_degree = stoul( strat.substr( 0, pos ) );
+          strat.erase( 0, pos + delimiter.length( ) );
+          global_bs = stoul( strat );
+        }
+      }
         break;
       case 's':single_shot = true;
         break;
@@ -105,25 +140,22 @@ int main( int argc, char **argv ) {
   else
     cout << "Directory created." << endl;
   cout << single_shot << endl;
-  const double step_size_sec = 1e-6;
   const uint32_t bwxstep_per_wave = BW_PER_WAVE_BYTES * step_size_sec;
-  const Step mrr_reconf_delay = MRR_RECONF_DELAY_SEC / step_size_sec;
-  const Step ocs_reconf_delay = OCS_RECONF_DELAY_SEC / step_size_sec;
   const Step gpu_launch_latency = GPU_LAUNCH_LATENCY_SEC / step_size_sec;
   const Step gpu_min_comp_time = GPU_MIN_COMP_TIME_SEC / step_size_sec;
   const Step interconnect_latency = INTERCONNECT_LATENCY_SEC / step_size_sec;
   const Step pcie_latency = PCIE_LATENCY_SEC / step_size_sec;
   Step dec_interval;
   if ( single_shot )
-    dec_interval = std::numeric_limits< Step >::max( );
+    dec_interval = std::numeric_limits< Step >::max( ) - interconnect_reconf_delay;
   else
     dec_interval = bw_dec_micro * 1e-6 / step_size_sec;
+
   SimConfig cnfg( num_waves,
                   InterType::OCS,
                   bwxstep_per_wave,
                   dec_interval,
-                  mrr_reconf_delay,
-                  ocs_reconf_delay,
+                  interconnect_reconf_delay,
                   gpu_launch_latency,
                   gpu_min_comp_time,
                   interconnect_latency,
@@ -147,12 +179,13 @@ int main( int argc, char **argv ) {
     tm_estimator = new TransportEstimator( num_gpus, log_dir );
   }
   /* construct an interconnect */
+  double bw_per_port_bytes = double( num_waves * BW_PER_WAVE_BYTES ); /* for optical interconnects, we rate limit at the interconnect */
   OCSInterconnect
-      interconnect( 0 /* device_id */, gpus, num_gpus, tm_estimator, cnfg, num_ocs, port_count, single_shot, log_dir );
+      interconnect( 0 /* device_id */, gpus, num_gpus, bw_per_port_bytes, bw_per_port_bytes, tm_estimator, cnfg, num_ocs, port_count, single_shot, log_dir );
 
   /* create the computation workload graph */
   CG graph;
-  graph.from_graph_profile( input_profile, cnfg.step_size_sec, 10 );
+  graph.from_graph_profile( input_profile, cnfg.step_size_sec, num_profiles );
 
   /* get a summary of the graph at an example batch size */
   graph.set_global_batchsize( 64 );
@@ -163,28 +196,48 @@ int main( int argc, char **argv ) {
   std::map< uint32_t, uint32_t > bs2niter_map;
   batch2niter_map_fromfile( input_profile, bs2niter_map );
   uint16_t d_max = num_ocs;
+  Step batch_quant_step = 1e-6 / cnfg.step_size_sec;
   Strategy strategy( graph,
                      &interconnect,
                      bs2niter_map,
+                     batch_quant_step,
                      gpus,
                      d_max,
                      cnfg,
                      log_dir );
   CG final_graph;
-  strategy.optimize_batchsize( final_graph ).ok( );
+  if ( is_auto_strategy )
+    strategy.optimize_batchsize( final_graph ).ok( );
+  else {
+    Step est_steps;
+    strategy.get_hybrid_placement( dp_degree, mp_degree, global_bs, est_steps, final_graph ).ok( );
+    cout << "est_steps=" << est_steps << endl;
+  }
+  final_graph.summary( );
 
   /* construct the sessions */
   Session session( 0 /* session_id */, gpus, final_graph, log_dir );
   cout << "input graph size: " << graph.adj.size( ) << endl;
-  SingleShotEsimator single_shot_esimator( num_gpus, log_dir );
-  if ( single_shot ) {
-    tm_estimator->bind_to_sessions( &session, 1 );
-    tm_estimator->log( );
-  } else {
+  if ( ! single_shot )
     dynamic_cast<TransportEstimator *>(tm_estimator)->bind_to_transports( gpus, num_gpus );
-    single_shot_esimator.bind_to_sessions( &session, 1 );
-    single_shot_esimator.log( );
+  tm_estimator->bind_to_sessions( &session, 1 );
+  tm_estimator->log( );
+
+  /* Setup the inteconnect ILP solver given the compute graph */
+  int max_src_dst = 0;
+  for ( int src = 0; src < num_gpus; src++ ){
+    for ( int dst = 0; dst < num_gpus; dst++ ){
+      if ( tm_estimator->tm_est.get_elem( src, dst ) > 0 ){
+        max_src_dst = max( max_src_dst, max( src, dst ) );
+      }
+    }
   }
+  int eff_num_gpus = max_src_dst + 1;
+  if ( ! single_shot )
+    dynamic_cast<TransportEstimator *>(tm_estimator)->set_eff_num_transports( eff_num_gpus ); /* to reduce the overhead of dense tm communication todo: add spare tm implementation*/
+  interconnect.set_eff_num_gpus( eff_num_gpus ); /* to speed-up the OCS solver */
+  interconnect.setup_optimal_solver( );
+
   bool done = false;
   for ( int it = 0; it < 1000000; it ++ ) {
     session.proceed( done ).ok( );

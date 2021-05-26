@@ -103,11 +103,13 @@ dtype Matrix2D< dtype >::get_elem( size_t row, size_t col ) const {
 
 template< class dtype >
 void Matrix2D< dtype >::copy_from( const Matrix2D< dtype > &matrix_2_d ) {
-  if ( matrix_2_d.n_cols != n_cols || matrix_2_d.n_rows != n_rows ) {
-    throw std::runtime_error( "matrix dimensions do not match for copying." );
-  }
-  for ( size_t row = 0; row < n_rows; row ++ ) {
-    for ( size_t col = 0; col < n_cols; col ++ )
+//  if ( matrix_2_d.n_cols > n_cols || matrix_2_d.n_rows > n_rows ) {
+//    throw std::runtime_error( "matrix dimensions do not match for copying." );
+//  }
+  size_t min_n_rows = std::min( matrix_2_d.n_rows, n_rows );
+  size_t min_n_cols = std::min( matrix_2_d.n_cols, n_cols );
+  for ( size_t row = 0; row < min_n_rows; row ++ ) {
+    for ( size_t col = 0; col < min_n_cols; col ++ )
       mat[ row ][ col ] = matrix_2_d.get_elem( row, col ); //todo:use memcpy
   }
 }
@@ -121,8 +123,10 @@ void Matrix2D< dtype >::normalize_by_max( ) {
   }
   if ( max_data != 0 ) {
     for ( size_t row = 0; row < n_rows; row ++ ) {
-      for ( size_t col = 0; col < n_cols; col ++ )
+      for ( size_t col = 0; col < n_cols; col ++ ) {
         mat[ row ][ col ] /= max_data;
+        mat[ row ][ col ] = double( int( 100. * mat[ row ][ col ] ) ) / 100.;
+      }
     }
   }
 }

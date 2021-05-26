@@ -33,8 +33,10 @@ static struct option command_line_options[] = {
     { "num_gpus", required_argument, nullptr, 'g' },
     { "bw_per_port_Gb", required_argument, nullptr, 'b' },
     { "latency_us", required_argument, nullptr, 'd' },
+    { "strategy", required_argument, nullptr, 's' },
     { "input_profile", required_argument, nullptr, 'i' },
     { "log_dir", required_argument, nullptr, 'l' },
+    { "num_profiles", required_argument, nullptr, 'n' },
     { "help", no_argument, nullptr, 'h' },
     { 0, 0, 0, 0 }
 };
@@ -54,12 +56,17 @@ int main( int argc, char **argv ) {
   uint32_t latency_us = 1;
   string input_profile;
   string log_dir;
+  bool is_auto_strategy = true;
+  uint32_t dp_degree;
+  uint32_t mp_degree;
+  uint32_t global_bs;
+  int num_profiles = 10;
   /* parse the input options */
   while ( true ) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    const int opt = getopt_long( argc, argv, "g:b:d:i:l:h", command_line_options, &option_index );
+    const int opt = getopt_long( argc, argv, "g:b:d:s:i:l:n:h", command_line_options, &option_index );
 
     /* Detect the end of the options. */
     if ( opt == - 1 )
@@ -71,9 +78,29 @@ int main( int argc, char **argv ) {
         break;
       case 'd':latency_us = stoul( optarg );
         break;
+      case 's': {
+        string strat;
+        strat = optarg;
+        if ( ! strat.compare( "auto" ))
+          is_auto_strategy = true;
+        else {
+          is_auto_strategy = false;
+          string delimiter = ":";
+          size_t pos = strat.find( delimiter );
+          dp_degree = stoul( strat.substr( 0, pos ));
+          strat.erase( 0, pos + delimiter.length( ) );
+          pos = strat.find( delimiter );
+          mp_degree = stoul( strat.substr( 0, pos ) );
+          strat.erase( 0, pos + delimiter.length( ) );
+          global_bs = stoul( strat );
+        }
+      }
+        break;
       case 'i':input_profile = optarg;
         break;
       case 'l':log_dir = optarg;
+        break;
+      case 'n': num_profiles = stoul( optarg );
         break;
       case 'h':usage( argv[ 0 ] );
         return EXIT_SUCCESS;
@@ -97,23 +124,21 @@ int main( int argc, char **argv ) {
     cerr << "Error :  " << strerror(errno) << endl;
   else
     cout << "Directory created" << endl;
-  const double step_size_sec = 1e-6;
+  const double step_size_sec = 1e-4;
   const uint32_t bwxstep_per_wave = BW_PER_WAVE_BYTES * step_size_sec;
-  const Step mrr_reconf_delay = MRR_RECONF_DELAY_SEC / step_size_sec;
-  const Step ocs_reconf_delay = OCS_RECONF_DELAY_SEC / step_size_sec;
   const Step gpu_launch_latency = GPU_LAUNCH_LATENCY_SEC / step_size_sec;
   const Step gpu_min_comp_time = GPU_MIN_COMP_TIME_SEC / step_size_sec;
   const Step interconnect_latency = double( latency_us ) * 1e-6 / step_size_sec;
   const Step pcie_latency = PCIE_LATENCY_SEC / step_size_sec;
-  const Step dec_interval = 1;
+  const Step dec_interval = std::numeric_limits<Step>::max();
 
   int num_waves = 0;
+  Step interconnect_reconf_delay = 0;
   SimConfig cnfg( num_waves,
                   InterType::ELECTSW,
                   bwxstep_per_wave,
                   dec_interval,
-                  mrr_reconf_delay,
-                  ocs_reconf_delay,
+                  interconnect_reconf_delay,
                   gpu_launch_latency,
                   gpu_min_comp_time,
                   interconnect_latency,
@@ -137,11 +162,11 @@ int main( int argc, char **argv ) {
   /* construct an interconnect */
   double bw_per_port_bytes = bw_per_port_Gb * 1e9 / 8;
   ElectricalSwitch
-      interconnect( 0 /* device_id */, gpus, num_gpus, &tm_estimator, cnfg, bw_per_port_bytes, log_dir );
+      interconnect( 0 /* device_id */, gpus, num_gpus, bw_per_port_bytes, bw_per_port_bytes, &tm_estimator, cnfg, bw_per_port_bytes, log_dir );
 
   /* create the computation workload graph */
   CG graph;
-  graph.from_graph_profile( input_profile, cnfg.step_size_sec, 10 );
+  graph.from_graph_profile( input_profile, cnfg.step_size_sec, num_profiles );
 
   /* get a summary of the graph at an example batch size */
   graph.set_global_batchsize( 64 );
@@ -153,15 +178,24 @@ int main( int argc, char **argv ) {
   batch2niter_map_fromfile( input_profile, bs2niter_map );
 
   /* create the strategy for finding the best parallelization config */
+  Step batch_quant_step = 1e-6 / cnfg.step_size_sec;
   Strategy strategy( graph,
                      &interconnect,
                      bs2niter_map,
+                     batch_quant_step,
                      gpus,
                      num_gpus /* max_dist */,
                      cnfg,
                      log_dir );
   CG final_graph;
-  strategy.optimize_batchsize( final_graph ).ok( );
+  if ( is_auto_strategy )
+    strategy.optimize_batchsize( final_graph ).ok( );
+  else {
+    Step est_steps;
+    strategy.get_hybrid_placement( dp_degree, mp_degree, global_bs, est_steps, final_graph ).ok( );
+    cout << "est_steps=" << est_steps << endl;
+  }
+  final_graph.summary( );
 
   /* construct the sessions */
   Session session( 0 /* session_id */, gpus, final_graph, log_dir );

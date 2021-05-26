@@ -30,6 +30,7 @@ std::unordered_map< PacketId, Packet * > Transport::flying_pkts = { };
 static struct option command_line_options[] = {
     { "num_gpus", required_argument, nullptr, 'g' },
     { "num_waves", required_argument, nullptr, 'w' },
+    { "strategy", required_argument, nullptr, 's' },
     { "input_profile", required_argument, nullptr, 'i' },
     { "log_dir", required_argument, nullptr, 'l' },
     { "help", no_argument, nullptr, 'h' },
@@ -48,12 +49,16 @@ int main( int argc, char **argv ) {
   uint32_t num_waves = 0;
   string input_profile;
   string log_dir;
+  bool is_auto_strategy = true;
+  uint32_t dp_degree;
+  uint32_t mp_degree;
+  uint32_t global_bs;
   /* parse the input options */
   while ( true ) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    const int opt = getopt_long( argc, argv, "g:w:i:l:h", command_line_options, &option_index );
+    const int opt = getopt_long( argc, argv, "g:w:s:i:l:h", command_line_options, &option_index );
 
     /* Detect the end of the options. */
     if ( opt == - 1 )
@@ -62,6 +67,24 @@ int main( int argc, char **argv ) {
       case 'g':num_gpus = stoul( optarg );
         break;
       case 'w':num_waves = stoul( optarg );
+        break;
+      case 's': {
+        string strat;
+        strat = optarg;
+        if ( ! strat.compare( "auto" ))
+          is_auto_strategy = true;
+        else {
+          is_auto_strategy = false;
+          string delimiter = ":";
+          size_t pos = strat.find( delimiter );
+          dp_degree = stoul( strat.substr( 0, pos ));
+          strat.erase( 0, pos + delimiter.length( ) );
+          pos = strat.find( delimiter );
+          mp_degree = stoul( strat.substr( 0, pos ) );
+          strat.erase( 0, pos + delimiter.length( ) );
+          global_bs = stoul( strat );
+        }
+      }
         break;
       case 'i':input_profile = optarg;
         break;
@@ -91,20 +114,18 @@ int main( int argc, char **argv ) {
     cout << "Directory created." << endl;
   const double step_size_sec = 1e-6;
   const uint32_t bwxstep_per_wave = BW_PER_WAVE_BYTES * step_size_sec;
-  const Step mrr_reconf_delay = MRR_RECONF_DELAY_SEC / step_size_sec;
-  const Step ocs_reconf_delay = OCS_RECONF_DELAY_SEC / step_size_sec;
   const Step gpu_launch_latency = GPU_LAUNCH_LATENCY_SEC / step_size_sec;
   const Step gpu_min_comp_time = GPU_MIN_COMP_TIME_SEC / step_size_sec;
   const Step interconnect_latency = INTERCONNECT_LATENCY_SEC / step_size_sec;
   const Step pcie_latency = PCIE_LATENCY_SEC / step_size_sec;
   const Step dec_interval = numeric_limits< Step >::max( );
 
+  Step interconnect_reconf_delay = 0;
   SimConfig cnfg( num_waves,
                   InterType::FULLMESH,
                   bwxstep_per_wave,
                   dec_interval,
-                  mrr_reconf_delay,
-                  ocs_reconf_delay,
+                  interconnect_reconf_delay,
                   gpu_launch_latency,
                   gpu_min_comp_time,
                   interconnect_latency,
@@ -127,8 +148,9 @@ int main( int argc, char **argv ) {
 
 
   /* construct an interconnect */
+  double bw_per_port_bytes = num_waves * BW_PER_WAVE_BYTES;
   FullMeshInterconnect
-      interconnect( 0 /* device_id */, gpus, num_gpus, &tm_estimator, cnfg, log_dir );
+      interconnect( 0 /* device_id */, gpus, num_gpus, bw_per_port_bytes, bw_per_port_bytes, &tm_estimator, cnfg, log_dir );
 
   /* create the computation workload graph */
   CG graph;
@@ -144,15 +166,23 @@ int main( int argc, char **argv ) {
   batch2niter_map_fromfile( input_profile, bs2niter_map );
 
   /* create the strategy for finding the best parallelization config */
+  Step batch_quant_step = 1e-6 / cnfg.step_size_sec;
   Strategy strategy( graph,
                      &interconnect,
                      bs2niter_map,
+                     batch_quant_step,
                      gpus,
                      num_gpus /* max_dist */,
                      cnfg,
                      log_dir );
   CG final_graph;
-  strategy.optimize_batchsize( final_graph ).ok( );
+  if ( is_auto_strategy )
+    strategy.optimize_batchsize( final_graph ).ok( );
+  else {
+    Step est_steps;
+    strategy.get_hybrid_placement( dp_degree, mp_degree, global_bs, est_steps, final_graph ).ok( );
+    cout << "est_steps=" << est_steps << endl;
+  }
 
   /* construct the sessions */
   Session session( 0 /* session_id */, gpus, final_graph, log_dir );
