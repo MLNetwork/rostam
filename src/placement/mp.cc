@@ -184,6 +184,12 @@ ExitStatus MP::find_placement( CG &output_graph ) {
     output_graph.priority_sort( run_order );
   }
   assert( output_graph.adj.size( ) == run_order.size( ));
+
+  add_sync_netops( output_graph, parallel_ops_map ).ok( );
+
+//  add_sync_netops( output_graph, parallel_ops_map ).ok( );
+
+
   return ExitStatus::SUCCESS;
 }
 
